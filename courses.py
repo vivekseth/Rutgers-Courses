@@ -14,7 +14,6 @@ PREREQ_TEST_1 = "Any Course EQUAL or GREATER Than: (01:640:026 )"
 PREREQ_TEST_2 = "(01:640:135 )<em> OR </em>(01:640:151 )<em> OR </em>(01:640:153 INTENSIVE CALC I)<em> OR </em>(01:640:191 HONORS CALCULUS I) "
 PREREQ_TEST_3 = "((01:198:112  or 14:332:351 ) and (01:198:211 ))<em> OR </em> ((01:198:112  or 14:332:351 ) and (14:332:331 ))"
 
-
 # -- Classes --
 
 class Subject(object):
@@ -25,6 +24,10 @@ class Subject(object):
 		self.courses = []
 	def setCourses(self, courses):
 		self.courses = courses
+	def __repr__(self):
+		return self.__str__()
+	def __str__(self):
+		return "SUBJECT: %s| %s" %(self.name, self.code) + "\n" + str(self.courses) + "\n----\n"
 	def csv(self):
 		for c in self.courses:
 			for s in c.sections:
@@ -40,12 +43,17 @@ class Subject(object):
 					print OUTPUT_TEMPLATE % format_dict
 
 class Course(object):
-	def __init__(self, name, code, sections, prereqs):
+	def __init__(self, name, code, sections, prereqs, coreCodes):
 		super(Course, self).__init__()
 		self.name = name
 		self.code = code
 		self.sections = sections
 		self.prereqs = prereqs
+		self.coreCodes = coreCodes
+	def __repr__(self):
+		return self.__str__()
+	def __str__(self):
+		return "%s [%s] (%d) -- %s" %(self.name, self.code, len(self.sections), str(self.coreCodes))
 
 class Section(object):
 	def __init__(self, code, instructors, meetings):
@@ -64,32 +72,31 @@ class Meeting(object):
 # -- Prequisite Evaluator --
 
 """
-Any Course EQUAL or GREATER Than: (01:640:026 )
-(01:640:135 )<em> OR </em>(01:640:151 )<em> OR </em>(01:640:153 INTENSIVE CALC I)<em> OR </em>(01:640:191 HONORS CALCULUS I) 
-((01:198:112  or 14:332:351 ) and (01:198:211 ))<em> OR </em> ((01:198:112  or 14:332:351 ) and (14:332:331 ))
+	Any Course EQUAL or GREATER Than: (01:640:026 )
+	(01:640:135 )<em> OR </em>(01:640:151 )<em> OR </em>(01:640:153 INTENSIVE CALC I)<em> OR </em>(01:640:191 HONORS CALCULUS I) 
+	((01:198:112  or 14:332:351 ) and (01:198:211 ))<em> OR </em> ((01:198:112  or 14:332:351 ) and (14:332:331 ))
 
-'((01:198:112  or 14:332:351 ) and (01:198:211 ))'
-EXP
-TERM
-FACTOR
-(EXP)
-(TERM)
-(FACTOR and FACTOR)
-((EXP) and (EXP))
-((TERM or TERM) and (TERM))
-((FACTOR or FACTOR) and (FACTOR))
-((COURSE_ID  or COURSE_ID ) and (COURSE_ID ))
-((01:198:112  or 14:332:351 ) and (01:198:211 ))
+	'((01:198:112  or 14:332:351 ) and (01:198:211 ))'
+	EXP
+	TERM
+	FACTOR
+	(EXP)
+	(TERM)
+	(FACTOR and FACTOR)
+	((EXP) and (EXP))
+	((TERM or TERM) and (TERM))
+	((FACTOR or FACTOR) and (FACTOR))
+	((COURSE_ID  or COURSE_ID ) and (COURSE_ID ))
+	((01:198:112  or 14:332:351 ) and (01:198:211 ))
 
 
-EXP => TERM | TERM or TERM
-TERM => FACTOR | FACTOR and FACTOR
-FACTOR => `COURSE_ID ` | (EXP)
-COURSE_ID => `SCHOOL:SUBJECT:COURSE`
-SCHOOL => `\d+`
-SUBJECT => `\d+`
-COURSE => `\d+`
-
+	EXP => TERM | TERM or TERM
+	TERM => FACTOR | FACTOR and FACTOR
+	FACTOR => `COURSE_ID ` | (EXP)
+	COURSE_ID => `SCHOOL:SUBJECT:COURSE`
+	SCHOOL => `\d+`
+	SUBJECT => `\d+`
+	COURSE => `\d+`
 """
 
 def stringsOnSameParenLevel(e):
@@ -229,9 +236,16 @@ def parseCourses(courseData):
 	for entry in courseData:
 		sections = parseSections(entry['sections'])
 		prereqs = parsePrereqOptions(entry['preReqNotes']) if entry['preReqNotes'] != None else []
-		c = Course(entry['title'], entry['courseNumber'], sections, prereqs)
+		coreCodes = parseCoreCodes(entry['coreCodes']) if entry['coreCodes'] != None else []
+		c = Course(entry['title'], entry['courseNumber'], sections, prereqs, coreCodes)
 		course_list.append(c)
 	return course_list
+
+def parseCoreCodes(coreCodesData):
+	code_list = []
+	for entry in coreCodesData:
+		code_list.append(entry['code'])
+	return code_list
 
 def parseSections(sectionData):
 	section_list = []
