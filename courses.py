@@ -2,12 +2,15 @@ import json
 import requests
 from joblib import Parallel, delayed  
 import multiprocessing
+import re
 
 # -- Globals --
 
 SUBJECT_URL = "https://sis.rutgers.edu/soc/subjects.json?semester=92014&campus=NB&level=U"
 COURSES_URL_TEMPLATE = "https://sis.rutgers.edu/soc/courses.json?subject=%(subject_code)s&semester=92014&campus=NB&level=U"
 OUTPUT_TEMPLATE = "\"%(subject_name)s\", \"%(course_name)s\", %(course_number)s, \"%(instructor_name)s\", \"%(meeting_day)s\", %(meeting_time)s, %(meeting_location)s"
+
+PREREQ_TEST = "((01:198:112  or 14:332:351 ) and (01:198:211 ))<em> OR </em> ((01:198:112  or 14:332:351 ) and (14:332:331 ))"
 
 # -- Classes --
 
@@ -53,6 +56,136 @@ class Meeting(object):
 		self.days = days
 		self.time = time
 		self.location = location
+
+# -- Prequisite Evaluator --
+
+"""
+Any Course EQUAL or GREATER Than: (01:640:026 )
+(01:640:135 )<em> OR </em>(01:640:151 )<em> OR </em>(01:640:153 INTENSIVE CALC I)<em> OR </em>(01:640:191 HONORS CALCULUS I) 
+((01:198:112  or 14:332:351 ) and (01:198:211 ))<em> OR </em> ((01:198:112  or 14:332:351 ) and (14:332:331 ))
+
+'((01:198:112  or 14:332:351 ) and (01:198:211 ))'
+EXP
+TERM
+FACTOR
+(EXP)
+(TERM)
+(FACTOR and FACTOR)
+((EXP) and (EXP))
+((TERM or TERM) and (TERM))
+((FACTOR or FACTOR) and (FACTOR))
+((COURSE_ID  or COURSE_ID ) and (COURSE_ID ))
+((01:198:112  or 14:332:351 ) and (01:198:211 ))
+
+
+EXP => TERM | TERM or TERM
+TERM => FACTOR | FACTOR and FACTOR
+FACTOR => `COURSE_ID ` | (EXP)
+COURSE_ID => `SCHOOL:SUBJECT:COURSE`
+SCHOOL => `\d+`
+SUBJECT => `\d+`
+COURSE => `\d+`
+
+"""
+
+def stringsOnSameParenLevel(e):
+	level = 0
+	sameLevelList = []
+	currString = ""
+	for i in range(len(e)):
+		if e[i] == '(':
+			if len(currString) > 0 and level == 0:
+				sameLevelList.append(currString)
+				currString = ""
+			level = level + 1
+		currString+=e[i]
+		if e[i] == ')':
+			if len(currString) > 0 and level == 1:
+				sameLevelList.append(currString)
+				currString = ""
+			level = level - 1
+	if len(currString) > 0:
+		sameLevelList.append(currString)
+	return sameLevelList
+
+def parsePrereqString(inputString):
+	e = inputString.strip()
+	sameLevelStrings = stringsOnSameParenLevel(e)
+	if len(sameLevelStrings) == 1:
+		if (sameLevelStrings[0][0] == '('):
+			return parsePrereqString(e[1:-1]) #remove outer parens
+		else:
+			#branch 1
+			andSplitString = e.split('and')
+			if len(andSplitString) == 2:
+				courseString1 = re.search('\d+:\d+:\d+', andSplitString[0]).group(0)
+				courseString2 = re.search('\d+:\d+:\d+', andSplitString[1]).group(0)
+				return AndPrerequisite(CoursePrerequisite(courseString1), CoursePrerequisite(courseString2))
+			#branch 2
+			orSplitString = e.split('or')
+			if len(orSplitString) == 2:
+				courseString1 = re.search('\d+:\d+:\d+', orSplitString[0]).group(0)
+				courseString2 = re.search('\d+:\d+:\d+', orSplitString[1]).group(0)
+				return OrPrerequisite(CoursePrerequisite(courseString1), CoursePrerequisite(courseString2))
+			#branch 3
+			return CoursePrerequisite(andSplitString[0])
+	elif len(sameLevelStrings) == 3:
+		operator = sameLevelStrings[1] # middle element
+		if (operator.find('and') >= 0):
+			return AndPrerequisite(parsePrereqString(sameLevelStrings[0]), parsePrereqString(sameLevelStrings[2]))
+		elif (operator.find('or') >= 0):
+			return OrPrerequisite(parsePrereqString(sameLevelStrings[0]), parsePrereqString(sameLevelStrings[2]))
+		else:
+			print 'ERROR'
+	else:
+		print 'ERROR'
+
+def parsePrereqOptions(e):
+	optionStrings = e.split('<em> OR </em>')
+	prereqOptions = []
+	for o in optionStrings:
+		print o
+		prereqOptions.append(parsePrereqString(o))
+	for p in prereqOptions:
+		p.evaluate(3)
+		print "---"
+
+class Prerequisite(object):
+	def __init__(self):
+		super(Prerequisite, self).__init__()
+	def evaluate(self, course_set):
+		return False;
+
+class AndPrerequisite(Prerequisite):
+	def __init__(self, p1, p2):
+		super(AndPrerequisite, self).__init__()
+		self.p1 = p1
+		self.p2 = p2
+	def evaluate(self, course_set):
+		print '(AND'
+		self.p1.evaluate(course_set)
+		self.p2.evaluate(course_set)
+		print ')'
+
+class OrPrerequisite(Prerequisite):
+	def __init__(self, p1, p2):
+		super(OrPrerequisite, self).__init__()
+		self.p1 = p1
+		self.p2 = p2
+	def evaluate(self, course_set):
+		print '(OR'
+		self.p1.evaluate(course_set)
+		self.p2.evaluate(course_set)
+		print ')'
+
+class CoursePrerequisite(Prerequisite):
+	def __init__(self, course):
+		super(CoursePrerequisite, self).__init__()
+		self.course = course
+	def evaluate(self, course_set):
+		print '(COURSE'
+		print self.course
+		print ')'
 
 # -- API Requests --
 
@@ -135,6 +268,4 @@ def downloadSubjectsAndParse():
 	return out
 
 if __name__ == '__main__':
-	subjects = downloadSubjectsAndParse()
-	for s in subjects:
-		s.csv()
+	parsePrereqOptions(PREREQ_TEST)
