@@ -503,6 +503,64 @@ def prereq_graph(subjects):
 
 	g.write('test-out.dot')
 
+def prereq_graph2(subjects):
+	g = pgv.AGraph(strict=False,directed=False)
+	g.graph_attr['overlap'] = False
+	# g.graph_attr['fontname'] = 'Helvetica'
+	# g.node_attr['fontname'] = 'Helvetica'
+	# g.node_attr['shape']='point'
+	# g.node_attr['color']='white'
+	# g.graph_attr['repulsiveforce'] = 5.0
+	# g.graph_attr['K'] = 1.0
+	# g.graph_attr['bgcolor'] = '0.0 0.0 0.0'
+
+	edges = {}
+	nodes = set()
+
+	# generate all edges
+	for s in subjects:
+		subject_code = s.code
+		for c in s.courses:
+			course_code = c.code
+			print course_code
+			for p in c.prereqs:
+				related_courses = p.related_courses()
+				if len(related_courses) == 0:
+					nodes.add(course_code)
+				for rc in related_courses:
+					if rc in edges and edges[rc] == course_code:
+						continue
+					else:
+						edges[rc] = course_code
+	
+	# generate all nodes from edges
+	for e in edges:
+		p1 = e
+		p2 = edges[e]
+		if p1 not in nodes:
+			print p1
+			nodes.add(p1)
+		if p2 not in nodes:
+			print p2
+			nodes.add(p2)
+
+	# generate sub graphs for subjects
+	for s in subjects:
+		subject_code = s.code
+		print subject_code
+		courses_for_subject = [n for n in nodes if n.find(subject_code) >= 0]
+		print courses_for_subject
+		g.add_subgraph(nbunch=courses_for_subject, name=s.name)
+
+	# make edges
+	for e in edges:
+		g.add_edge(e, edges[e])
+
+	g.write('clustered-graph.dot')
+
+		
+
+
 if __name__ == '__main__':
 	data = None
 	try:
@@ -531,7 +589,7 @@ if __name__ == '__main__':
 
 	index = data['index']
 	subjects = data['subject']
-	prereq_graph(subjects)
+	prereq_graph2(subjects)
 
 	# while True:
 	# 	temp = raw_input('enter option: ')
